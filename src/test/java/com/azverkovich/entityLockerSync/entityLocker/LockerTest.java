@@ -19,7 +19,7 @@ import static java.lang.String.format;
 import static java.lang.Thread.sleep;
 
 public class LockerTest {
-    public static final Logger log = Logger.getLogger(LockerTest.class); 
+    public static final Logger log = Logger.getLogger(LockerTest.class);
 
     public static final int NUMBER_OF_THREADS = 10;
     public static final int USER_ENTITIES_NUMBER = 20;
@@ -37,23 +37,25 @@ public class LockerTest {
         ExecutorService executorService = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
 
         List<Callable<Object>> tasks = newLinkedList();
-        IntStream.range(0, OPERATIONS_NUMBER).forEach( i ->
+        IntStream.range(0, OPERATIONS_NUMBER).forEach(i ->
                 tasks.add(new Callable<Object>() {
                     public Future<Object> call() {
+                        UserEntity user = users.get(RandomUtils.nextInt(0, USER_ENTITIES_NUMBER));
                         try {
-                            UserEntity user = users.get(RandomUtils.nextInt(0, USER_ENTITIES_NUMBER));
-                            synchronized (locker.lock(user.getId())) {
+                            locker.lock(user.getId());
 
-                                user.setName("userName_" + Thread.currentThread().getName());
+                            user.setName("userName_" + Thread.currentThread().getName());
 
-                                sleep(2 * 500l);
+                            sleep(2 * 500l);
 
-                                log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
+                            log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
 
-                            }
+
                         } catch (InterruptedException e) {
                             log.info(format("Thread %s was interrupted", Thread.currentThread().getName()));
                             Thread.currentThread().interrupt();
+                        } finally {
+                            locker.unlock(user.getId());
                         }
 
                         return null;
@@ -70,42 +72,46 @@ public class LockerTest {
         UserEntity user = new UserEntity("user1", "initialName");
         EntityLocker locker = Locker.getInstance();
 
-        Thread thread1 =  new Thread(new Runnable() {
+        Thread thread1 = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    synchronized (locker.lock(user.getId())) {
+                    locker.lock(user.getId());
 
-                        user.setName("userName_" + Thread.currentThread().getName());
+                    user.setName("userName_" + Thread.currentThread().getName());
 
-                        sleep(1 * 5000l);
+                    sleep(1 * 5000l);
 
-                        log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
+                    log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
 
-                    }
+
                 } catch (InterruptedException e) {
                     log.info(format("Thread %s was interrupted", Thread.currentThread().getName()));
                     Thread.currentThread().interrupt();
+                } finally {
+                    locker.unlock(user.getId());
                 }
             }
         });
 
-        Thread thread2 =  new Thread(new Runnable() {
+        Thread thread2 = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    synchronized (locker.lock(user.getId())) {
+                    locker.lock(user.getId());
 
-                        user.setName("userName_" + Thread.currentThread().getName());
+                    user.setName("userName_" + Thread.currentThread().getName());
 
-                        sleep(2 * 5000l);
+                    sleep(2 * 5000l);
 
-                        log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
+                    log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
 
-                    }
+
                 } catch (InterruptedException e) {
                     log.info(format("Thread %s was interrupted", Thread.currentThread().getName()));
                     Thread.currentThread().interrupt();
+                } finally {
+                    locker.unlock(user.getId());
                 }
             }
         });
@@ -117,5 +123,82 @@ public class LockerTest {
         thread2.join();
 
         log.info(user);
+    }
+
+    @Test
+    public void testReenterancySameEntity() throws InterruptedException {
+
+        UserEntity user = new UserEntity("user1", "initialName");
+        EntityLocker locker = Locker.getInstance();
+
+        Thread thread1 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    locker.lock(user.getId());
+
+                    user.setName("userName_" + Thread.currentThread().getName());
+
+                    locker.lock(user.getId());
+
+                    sleep(1 * 5000l);
+
+                    log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
+
+
+                } catch (InterruptedException e) {
+                    log.info(format("Thread %s was interrupted", Thread.currentThread().getName()));
+                    Thread.currentThread().interrupt();
+                } finally {
+                    locker.unlock(user.getId());
+                    locker.unlock(user.getId());
+                }
+            }
+        });
+
+        thread1.start();
+
+        log.info(user);
+    }
+
+    @Test
+    public void testGlobalWithTimeout() throws InterruptedException {
+        List<UserEntity> users = newArrayList();
+        IntStream.range(0, USER_ENTITIES_NUMBER).forEach(
+                i -> users.add(new UserEntity(format("user%s", i), format("userName%s", i)))
+        );
+
+        EntityLocker locker = Locker.getInstance();
+
+        ExecutorService executorService = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
+
+        List<Callable<Object>> tasks = newLinkedList();
+        IntStream.range(0, OPERATIONS_NUMBER).forEach(i ->
+                tasks.add(new Callable<Object>() {
+                    public Future<Object> call() {
+                        UserEntity user = users.get(RandomUtils.nextInt(0, USER_ENTITIES_NUMBER));
+                        try {
+                            locker.lock(user.getId(), RandomUtils.nextInt(1, 4) * 500l);
+
+                            user.setName("userName_" + Thread.currentThread().getName());
+
+                            sleep(2 * 500l);
+
+                            log.info(format("Thread %s set username %s for user %s", Thread.currentThread().getName(), user.getName(), user.getId()));
+
+
+                        } catch (InterruptedException e) {
+                            log.info(format("Thread %s was interrupted", Thread.currentThread().getName()));
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            locker.unlock(user.getId());
+                        }
+
+                        return null;
+                    }
+                })
+        );
+        executorService.invokeAll(tasks);
+        executorService.shutdown();
     }
 }

@@ -2,5 +2,7 @@ package com.azverkovich.entityLockerSync.entityLocker;
 
 public interface EntityLocker {
 
-    Object lock(Object entityId);
+    void lock(Object entityId);
+    void lock(Object entityId, long timeout);
+    void unlock(Object entityId);
 }
